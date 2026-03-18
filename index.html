@@ -2,23 +2,23 @@
 <html lang="pt-br">
 <head>
     <meta charset="UTF-8">
-    <title>Analisador de Metadados Pro</title>
+    <title>Analisador de Metadados Definitivo</title>
     <script src="https://cdn.jsdelivr.net/npm/exifreader@4.12.0/dist/exif-reader.js"></script>
     <style>
-        body { font-family: sans-serif; padding: 20px; background: #f0f2f5; }
+        body { font-family: 'Segoe UI', Tahoma, sans-serif; padding: 20px; background: #f0f2f5; }
         .container { max-width: 800px; margin: auto; background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); }
         input[type="file"] { width: 100%; padding: 20px; border: 2px dashed #1877f2; border-radius: 8px; cursor: pointer; background: #f7f8fa; margin-bottom: 20px; box-sizing: border-box; }
         table { width: 100%; border-collapse: collapse; }
-        th { background: #f8f9fa; color: #65676b; text-align: left; padding: 12px; width: 35%; border-bottom: 1px solid #e4e6eb; }
-        td { padding: 12px; border-bottom: 1px solid #e4e6eb; color: #050505; }
+        th { background: #f8f9fa; color: #65676b; text-align: left; padding: 14px; width: 35%; border-bottom: 1px solid #e4e6eb; }
+        td { padding: 14px; border-bottom: 1px solid #e4e6eb; color: #050505; }
         .gps-row { background-color: #e7f3ff; font-weight: bold; }
-        .gps-link { background: #42b72a; color: white; padding: 8px 15px; border-radius: 6px; text-decoration: none; display: inline-block; }
+        .gps-link { background: #42b72a; color: white; padding: 8px 15px; border-radius: 6px; text-decoration: none; display: inline-block; font-size: 14px;}
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h2>Analisador de Metadados</h2>
+    <h2>Analisador de Metadados (GPS Corrigido)</h2>
     <input type="file" id="fileInput" accept="image/*,video/*">
     <table id="resultTable" style="display:none;">
         <tbody id="tableBody"></tbody>
@@ -30,17 +30,27 @@
     const table = document.getElementById('resultTable');
     const tbody = document.getElementById('tableBody');
 
-    // Função específica para extrair decimal direto do ExifReader
-    function getGPS(tag) {
-        if (!tag) return null;
-        // Tenta pegar o valor já calculado pela biblioteca (muitas vezes disponível)
-        if (typeof tag.value === 'number') return tag.value;
-        // Se for um array de objetos (Racional), calcula manualmente
-        if (Array.isArray(tag.value) && tag.value[0]?.numerator) {
-            const d = tag.value[0].numerator / tag.value[0].denominator;
-            const m = tag.value[1].numerator / tag.value[1].denominator;
-            const s = tag.value[2].numerator / tag.value[2].denominator;
-            return d + (m / 60) + (s / 3600);
+    // Extração EXATA baseada na estrutura de Arrays do ExifReader
+    function getDecimalGPS(tag) {
+        if (!tag || !tag.value) return null;
+        
+        try {
+            // Formato padrão EXIF: [ [grausNum, grausDen], [minNum, minDen], [segNum, segDen] ]
+            if (Array.isArray(tag.value) && tag.value.length === 3) {
+                const graus = tag.value[0][0] / (tag.value[0][1] || 1);
+                const minutos = tag.value[1][0] / (tag.value[1][1] || 1);
+                const segundos = tag.value[2][0] / (tag.value[2][1] || 1);
+                return graus + (minutos / 60) + (segundos / 3600);
+            }
+            
+            // Fallback caso a biblioteca já entregue formatado
+            if (typeof tag.description === 'number') return tag.description;
+            if (typeof tag.description === 'string') {
+                const parsed = parseFloat(tag.description);
+                if (!isNaN(parsed)) return parsed;
+            }
+        } catch (e) {
+            console.error("Erro na conversão:", e);
         }
         return null;
     }
@@ -55,35 +65,35 @@
 
             if (file.type.startsWith('image/')) {
                 const tags = await ExifReader.load(file);
+                console.log("Tags lidas:", tags); // Deixei isso aqui para debug no console (F12) se precisar
                 
-                // Extração robusta de coordenadas
-                let lat = getGPS(tags.GPSLatitude);
-                let lon = getGPS(tags.GPSLongitude);
+                let lat = getDecimalGPS(tags['GPSLatitude']);
+                let lon = getDecimalGPS(tags['GPSLongitude']);
 
-                // Aplicar direção (S e W tornam o número negativo)
-                if (lat && tags.GPSLatitudeRef?.value[0] === 'S') lat = -lat;
-                if (lon && tags.GPSLongitudeRef?.value[0] === 'W') lon = -lon;
+                // Referência N/S e E/W para definir sinal negativo
+                const latRef = tags['GPSLatitudeRef']?.value?.[0] || tags['GPSLatitudeRef']?.description?.[0];
+                const lonRef = tags['GPSLongitudeRef']?.value?.[0] || tags['GPSLongitudeRef']?.description?.[0];
 
-                // Verificação: se for 0.000, provavelmente é lixo de processamento
-                if (lat && lon && Math.abs(lat) > 0.0001) {
+                if (lat !== null && latRef && latRef.toUpperCase() === 'S') lat = -lat;
+                if (lon !== null && lonRef && lonRef.toUpperCase() === 'W') lon = -lon;
+
+                if (lat !== null && lon !== null && lat !== 0) {
                     const url = `https://www.google.com/maps/search/?api=1&query=${lat},${lon}`;
-                    addTableRow("📍 Localização", `<a href="${url}" target="_blank" class="gps-link">ABRIR GOOGLE MAPS</a>`, true, "gps-row");
+                    addTableRow("📍 Localização", `<a href="${url}" target="_blank" class="gps-link">VER NO GOOGLE MAPS</a>`, true, "gps-row");
                     addTableRow("Latitude", lat.toFixed(6), false, "gps-row");
                     addTableRow("Longitude", lon.toFixed(6), false, "gps-row");
                 } else {
-                    addTableRow("📍 Localização", "GPS não encontrado (Verifique se a localização estava ativa ao tirar a foto)");
+                    addTableRow("📍 Localização", "Tags de GPS não encontradas na leitura do arquivo.");
                 }
 
                 if (tags.Make) addTableRow("Marca", tags.Make.description);
                 if (tags.Model) addTableRow("Modelo", tags.Model.description);
-                if (tags.DateTime) addTableRow("Data/Hora", tags.DateTime.description);
+                if (tags.DateTimeOriginal || tags.DateTime) addTableRow("Data/Hora", (tags.DateTimeOriginal || tags.DateTime).description);
                 
-                const w = tags['Image Width']?.value || tags.ImageWidth?.value;
-                const h = tags['Image Height']?.value || tags.ImageHeight?.value;
+                const w = tags['Image Width']?.value || tags.PixelXDimension?.value;
+                const h = tags['Image Height']?.value || tags.PixelYDimension?.value;
                 if (w) addTableRow("Resolução", `${w} x ${h} px`);
 
-            } else {
-                addTableRow("Tipo", "Vídeo selecionado (Metadados básicos apenas)");
             }
             table.style.display = 'table';
         } catch (err) {
