@@ -2,28 +2,27 @@
 <html lang="pt-br">
 <head>
     <meta charset="UTF-8">
-    <title>Analisador de Metadados Pro - v3</title>
+    <title>Analisador de Metadados Pro - v4</title>
     <script src="https://cdn.jsdelivr.net/npm/exifreader@4.12.0/dist/exif-reader.js"></script>
     <style>
-        body { font-family: 'Segoe UI', Tahoma, sans-serif; padding: 30px; background: #f4f7f6; }
-        .container { max-width: 800px; margin: auto; background: white; padding: 25px; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
-        h2 { color: #2c3e50; margin-bottom: 20px; border-bottom: 2px solid #3498db; padding-bottom: 10px; }
-        input[type="file"] { width: 100%; padding: 15px; border: 2px dashed #bdc3c7; border-radius: 5px; margin-bottom: 20px; cursor: pointer; }
-        table { width: 100%; border-collapse: collapse; margin-top: 10px; display: none; }
-        th { background: #f8f9fa; color: #7f8c8d; text-align: left; padding: 12px; width: 30%; border-bottom: 1px solid #eee; font-size: 14px; }
-        td { padding: 12px; border-bottom: 1px solid #eee; color: #2c3e50; font-size: 14px; word-break: break-all; }
-        .gps-badge { background: #27ae60; color: white; padding: 4px 10px; border-radius: 4px; text-decoration: none; font-weight: bold; font-size: 12px; }
-        .error-msg { color: #e74c3c; background: #fdeaea; padding: 10px; border-radius: 5px; display: none; margin-top: 10px; }
+        body { font-family: 'Segoe UI', system-ui, sans-serif; padding: 30px; background: #f0f2f5; }
+        .container { max-width: 800px; margin: auto; background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); }
+        h2 { color: #1877f2; border-bottom: 2px solid #e4e6eb; padding-bottom: 10px; }
+        input[type="file"] { width: 100%; padding: 20px; border: 2px dashed #1877f2; border-radius: 8px; cursor: pointer; background: #f7f8fa; margin-bottom: 20px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th { background: #f8f9fa; color: #65676b; text-align: left; padding: 12px; width: 35%; border-bottom: 1px solid #e4e6eb; font-size: 14px; }
+        td { padding: 12px; border-bottom: 1px solid #e4e6eb; color: #050505; font-size: 14px; word-break: break-all; }
+        .gps-row { background-color: #e7f3ff; }
+        .gps-link { display: inline-block; background: #42b72a; color: white; padding: 6px 12px; border-radius: 6px; text-decoration: none; font-weight: bold; }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h2>Leitor de Metadados Amigável</h2>
+    <h2>Extração de Metadados</h2>
     <input type="file" id="fileInput" accept="image/*,video/*">
-    <div id="errorMessage" class="error-msg"></div>
     
-    <table id="resultTable">
+    <table id="resultTable" style="display:none;">
         <tbody id="tableBody"></tbody>
     </table>
 </div>
@@ -32,68 +31,66 @@
     const fileInput = document.getElementById('fileInput');
     const table = document.getElementById('resultTable');
     const tbody = document.getElementById('tableBody');
-    const errorDiv = document.getElementById('errorMessage');
 
     fileInput.addEventListener('change', async (e) => {
         const file = e.target.files[0];
         if (!file) return;
 
-        // Reset inicial
         tbody.innerHTML = '';
-        table.style.display = 'none';
-        errorDiv.style.display = 'none';
-
+        
         try {
-            // Informações do Sistema de Arquivos
-            addTableRow("Nome", file.name);
+            // Dados básicos do arquivo
+            addTableRow("Nome do Arquivo", file.name);
             addTableRow("Tamanho", (file.size / (1024 * 1024)).toFixed(2) + " MB");
-            addTableRow("Tipo", file.type);
 
             if (file.type.startsWith('image/')) {
-                // Carregar metadados da imagem
                 const tags = await ExifReader.load(file);
-                
-                // Processar GPS com segurança
-                if (tags.GPSLatitude && tags.GPSLongitude) {
-                    const lat = tags.GPSLatitude.description;
-                    const lon = tags.GPSLongitude.description;
-                    
-                    if (lat && lon) {
-                        const mapsLink = `https://www.google.com/maps?q=${lat},${lon}`;
-                        addTableRow("📍 Localização", `<a href="${mapsLink}" target="_blank" class="gps-badge">ABRIR NO GOOGLE MAPS</a>`, true);
-                        addTableRow("Coordenadas", `${lat} (Lat), ${lon} (Lon)`);
-                    }
+                console.log("Tags encontradas:", tags); // Para debug no console (F12)
+
+                // Lógica de GPS Reforçada
+                let lat = tags.GPSLatitude ? tags.GPSLatitude.description : null;
+                let lon = tags.GPSLongitude ? tags.GPSLongitude.description : null;
+
+                // Se a descrição falhar, tenta o valor numérico direto
+                if (!lat && tags.GPSLatitude) lat = tags.GPSLatitude.value;
+                if (!lon && tags.GPSLongitude) lon = tags.GPSLongitude.value;
+
+                if (lat && lon) {
+                    const url = `https://www.google.com/maps?q=${lat},${lon}`;
+                    addTableRow("📍 Localização", `<a href="${url}" target="_blank" class="gps-link">VER NO MAPA (Google Maps)</a>`, true, "gps-row");
+                    addTableRow("Latitude", lat, false, "gps-row");
+                    addTableRow("Longitude", lon, false, "gps-row");
+                } else {
+                    addTableRow("GPS", "Nenhuma coordenada encontrada nesta imagem.");
                 }
 
-                // Dados do Equipamento
+                // Informações da Câmera
                 if (tags.Make) addTableRow("Fabricante", tags.Make.description);
-                if (tags.Model) addTableRow("Modelo", tags.Model.description);
-                if (tags.DateTime) addTableRow("Data da Foto", tags.DateTime.description);
-                if (tags.Software) addTableRow("Software", tags.Software.description);
+                if (tags.Model) addTableRow("Aparelho", tags.Model.description);
+                if (tags.DateTime) addTableRow("Data/Hora", tags.DateTime.description);
+                if (tags.Software) addTableRow("Editado com", tags.Software.description);
                 
-                // Resolução
-                const w = tags['Image Width']?.value || tags.ImageWidth?.value;
-                const h = tags['Image Height']?.value || tags.ImageHeight?.value;
-                if (w && h) addTableRow("Dimensões", `${w} x ${h} pixels`);
+                // Dimensões
+                const width = tags['Image Width']?.value || tags.ImageWidth?.value;
+                const height = tags['Image Height']?.value || tags.ImageHeight?.value;
+                if (width) addTableRow("Resolução", `${width} x ${height} pixels`);
 
             } else if (file.type.startsWith('video/')) {
                 const video = await getVideoData(file);
                 addTableRow("Duração", video.duration + " seg");
-                addTableRow("Resolução", `${video.width}x${video.height}`);
+                addTableRow("Dimensões Vídeo", `${video.width}x${video.height}`);
             }
 
             table.style.display = 'table';
 
         } catch (err) {
-            console.error("Erro completo:", err);
-            errorDiv.textContent = "Não foi possível ler os metadados deste arquivo. Ele pode estar protegido ou não possuir informações EXIF.";
-            errorDiv.style.display = 'block';
-            table.style.display = 'table'; // Mostra pelo menos os dados do arquivo
+            alert("Erro ao processar arquivo: " + err.message);
         }
     });
 
-    function addTableRow(label, value, isHTML = false) {
+    function addTableRow(label, value, isHTML = false, className = "") {
         const row = tbody.insertRow();
+        if (className) row.className = className;
         const th = document.createElement('th');
         th.textContent = label;
         const td = row.insertCell();
@@ -112,7 +109,6 @@
                 URL.revokeObjectURL(v.src);
                 resolve({ duration: v.duration.toFixed(1), width: v.videoWidth, height: v.videoHeight });
             };
-            v.onerror = () => resolve({ duration: "N/A", width: "N/A", height: "N/A" });
         });
     }
 </script>
