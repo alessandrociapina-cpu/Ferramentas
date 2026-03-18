@@ -2,28 +2,24 @@
 <html lang="pt-br">
 <head>
     <meta charset="UTF-8">
-    <title>Analisador de Metadados Final</title>
+    <title>Analisador de Metadados Pro</title>
     <script src="https://cdn.jsdelivr.net/npm/exifreader@4.12.0/dist/exif-reader.js"></script>
     <style>
-        body { font-family: 'Segoe UI', Tahoma, sans-serif; padding: 30px; background: #f0f2f5; color: #1c1e21; }
-        .container { max-width: 800px; margin: auto; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); }
-        h2 { color: #1877f2; border-bottom: 2px solid #e4e6eb; padding-bottom: 15px; margin-top: 0; }
-        input[type="file"] { width: 100%; padding: 25px; border: 2px dashed #1877f2; border-radius: 8px; cursor: pointer; background: #f7f8fa; margin-bottom: 20px; box-sizing: border-box; }
-        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-        th { background: #f8f9fa; color: #65676b; text-align: left; padding: 14px; width: 35%; border-bottom: 1px solid #e4e6eb; font-size: 14px; }
-        td { padding: 14px; border-bottom: 1px solid #e4e6eb; color: #050505; font-size: 14px; word-break: break-all; }
+        body { font-family: sans-serif; padding: 20px; background: #f0f2f5; }
+        .container { max-width: 800px; margin: auto; background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); }
+        input[type="file"] { width: 100%; padding: 20px; border: 2px dashed #1877f2; border-radius: 8px; cursor: pointer; background: #f7f8fa; margin-bottom: 20px; box-sizing: border-box; }
+        table { width: 100%; border-collapse: collapse; }
+        th { background: #f8f9fa; color: #65676b; text-align: left; padding: 12px; width: 35%; border-bottom: 1px solid #e4e6eb; }
+        td { padding: 12px; border-bottom: 1px solid #e4e6eb; color: #050505; }
         .gps-row { background-color: #e7f3ff; font-weight: bold; }
-        .gps-link { display: inline-block; background: #42b72a; color: white; padding: 8px 16px; border-radius: 6px; text-decoration: none; font-size: 13px; }
-        .gps-link:hover { background: #36a420; }
+        .gps-link { background: #42b72a; color: white; padding: 8px 15px; border-radius: 6px; text-decoration: none; display: inline-block; }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h2>Analisador de Arquivos</h2>
-    <p>Selecione uma imagem ou vídeo para extrair metadados.</p>
+    <h2>Analisador de Metadados</h2>
     <input type="file" id="fileInput" accept="image/*,video/*">
-    
     <table id="resultTable" style="display:none;">
         <tbody id="tableBody"></tbody>
     </table>
@@ -34,48 +30,48 @@
     const table = document.getElementById('resultTable');
     const tbody = document.getElementById('tableBody');
 
-    // Função de conversão ultra-segura para números
-    function parseGPS(coord) {
-        if (!coord) return null;
-        let value = coord.description || coord.value || coord;
-        
-        // Se for o formato de array [graus, minutos, segundos]
-        if (Array.isArray(value)) {
-            return parseFloat(value[0]) + (parseFloat(value[1] || 0) / 60) + (parseFloat(value[2] || 0) / 3600);
+    // Função específica para extrair decimal direto do ExifReader
+    function getGPS(tag) {
+        if (!tag) return null;
+        // Tenta pegar o valor já calculado pela biblioteca (muitas vezes disponível)
+        if (typeof tag.value === 'number') return tag.value;
+        // Se for um array de objetos (Racional), calcula manualmente
+        if (Array.isArray(tag.value) && tag.value[0]?.numerator) {
+            const d = tag.value[0].numerator / tag.value[0].denominator;
+            const m = tag.value[1].numerator / tag.value[1].denominator;
+            const s = tag.value[2].numerator / tag.value[2].denominator;
+            return d + (m / 60) + (s / 3600);
         }
-        
-        const num = parseFloat(value);
-        return isNaN(num) ? null : num;
+        return null;
     }
 
     fileInput.addEventListener('change', async (e) => {
         const file = e.target.files[0];
         if (!file) return;
-
         tbody.innerHTML = '';
-        table.style.display = 'none';
-        
+
         try {
             addTableRow("Arquivo", file.name);
-            addTableRow("Tamanho", (file.size / (1024 * 1024)).toFixed(2) + " MB");
 
             if (file.type.startsWith('image/')) {
                 const tags = await ExifReader.load(file);
                 
-                let lat = parseGPS(tags.GPSLatitude);
-                let lon = parseGPS(tags.GPSLongitude);
+                // Extração robusta de coordenadas
+                let lat = getGPS(tags.GPSLatitude);
+                let lon = getGPS(tags.GPSLongitude);
 
-                // Correção de Hemisfério (S e W são negativos)
-                if (lat && tags.GPSLatitudeRef?.value?.[0] === 'S') lat = -Math.abs(lat);
-                if (lon && tags.GPSLongitudeRef?.value?.[0] === 'W') lon = -Math.abs(lon);
+                // Aplicar direção (S e W tornam o número negativo)
+                if (lat && tags.GPSLatitudeRef?.value[0] === 'S') lat = -lat;
+                if (lon && tags.GPSLongitudeRef?.value[0] === 'W') lon = -lon;
 
-                if (lat !== null && lon !== null) {
-                    const googleMapsUrl = `https://www.google.com/maps/search/?api=1&query=${lat},${lon}`;
-                    addTableRow("📍 Localização", `<a href="${googleMapsUrl}" target="_blank" class="gps-link">VER NO GOOGLE MAPS</a>`, true, "gps-row");
+                // Verificação: se for 0.000, provavelmente é lixo de processamento
+                if (lat && lon && Math.abs(lat) > 0.0001) {
+                    const url = `https://www.google.com/maps/search/?api=1&query=${lat},${lon}`;
+                    addTableRow("📍 Localização", `<a href="${url}" target="_blank" class="gps-link">ABRIR GOOGLE MAPS</a>`, true, "gps-row");
                     addTableRow("Latitude", lat.toFixed(6), false, "gps-row");
                     addTableRow("Longitude", lon.toFixed(6), false, "gps-row");
                 } else {
-                    addTableRow("📍 Localização", "GPS não encontrado ou sem permissão.");
+                    addTableRow("📍 Localização", "GPS não encontrado (Verifique se a localização estava ativa ao tirar a foto)");
                 }
 
                 if (tags.Make) addTableRow("Marca", tags.Make.description);
@@ -86,41 +82,20 @@
                 const h = tags['Image Height']?.value || tags.ImageHeight?.value;
                 if (w) addTableRow("Resolução", `${w} x ${h} px`);
 
-            } else if (file.type.startsWith('video/')) {
-                const video = await getVideoData(file);
-                addTableRow("Duração", video.duration + " seg");
-                addTableRow("Resolução", `${video.w}x${video.h}`);
+            } else {
+                addTableRow("Tipo", "Vídeo selecionado (Metadados básicos apenas)");
             }
-
             table.style.display = 'table';
         } catch (err) {
-            console.error(err);
-            alert("Erro ao ler o arquivo: " + err.message);
+            alert("Erro: " + err.message);
         }
     });
 
     function addTableRow(label, value, isHTML = false, className = "") {
         const row = tbody.insertRow();
         if (className) row.className = className;
-        const th = document.createElement('th');
-        th.textContent = label;
-        const td = row.insertCell();
-        if (isHTML) td.innerHTML = value;
-        else td.textContent = value;
-        row.appendChild(th);
-        row.appendChild(td);
-    }
-
-    function getVideoData(file) {
-        return new Promise((resolve) => {
-            const v = document.createElement('video');
-            v.preload = 'metadata';
-            v.src = URL.createObjectURL(file);
-            v.onloadedmetadata = () => {
-                URL.revokeObjectURL(v.src);
-                resolve({ duration: v.duration.toFixed(1), w: v.videoWidth, h: v.videoHeight });
-            };
-        });
+        row.innerHTML = `<th>${label}</th><td>${isHTML ? value : value}</td>`;
+        if (!isHTML) row.cells[1].textContent = value;
     }
 </script>
 </body>
