@@ -8,13 +8,14 @@
         body { font-family: 'Segoe UI', Tahoma, sans-serif; padding: 20px; background: #f0f2f5; color: #1c1e21; }
         .container { max-width: 800px; margin: auto; background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); }
         h2 { color: #1877f2; border-bottom: 2px solid #e4e6eb; padding-bottom: 10px; margin-top: 0; }
-        /* Botão sem o 'accept' para forçar o Gerenciador de Arquivos do Android */
         input[type="file"] { width: 100%; padding: 20px; border: 2px dashed #1877f2; border-radius: 8px; cursor: pointer; background: #f7f8fa; margin-bottom: 20px; box-sizing: border-box; }
         table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-        th { background: #f8f9fa; color: #65676b; text-align: left; padding: 14px; width: 35%; border-bottom: 1px solid #e4e6eb; font-size: 14px; }
-        td { padding: 14px; border-bottom: 1px solid #e4e6eb; font-size: 14px; word-break: break-all; }
+        th, td { padding: 12px 14px; border-bottom: 1px solid #e4e6eb; font-size: 14px; word-break: break-word; }
+        th { background: #f8f9fa; color: #65676b; text-align: left; width: 35%; }
+        /* Estilos para as seções */
+        .section-header th { background: #1877f2; color: white; text-align: center; text-transform: uppercase; font-size: 12px; letter-spacing: 1px; padding: 8px; border-radius: 4px 4px 0 0; }
         .gps-row { background-color: #e7f3ff; font-weight: bold; }
-        .gps-link { background: #42b72a; color: white; padding: 8px 16px; border-radius: 6px; text-decoration: none; display: inline-block; font-size: 13px;}
+        .gps-link { background: #42b72a; color: white; padding: 6px 14px; border-radius: 6px; text-decoration: none; display: inline-block; font-size: 13px;}
         .gps-link:hover { background: #36a420; }
         .dica { font-size: 13px; color: #e67e22; background: #fdf2e9; padding: 10px; border-radius: 6px; margin-bottom: 15px; }
     </style>
@@ -25,7 +26,7 @@
     <h2>Leitor de Metadados Profissional</h2>
     
     <div class="dica">
-        <strong>💡 Dica:</strong> Para ver o GPS, navegue até a pasta original da foto (ex: Arquivos &gt; DCIM &gt; Câmera) em vez de usar atalhos da Galeria.
+        <strong>💡 Dica:</strong> Navegue até a pasta original da foto (ex: Arquivos > DCIM > Câmera) para evitar o bloqueio de GPS da Galeria.
     </div>
 
     <input type="file" id="fileInput">
@@ -48,44 +49,76 @@
         table.style.display = 'none';
 
         try {
-            addTableRow("Arquivo", file.name);
+            // Seção: Informações Básicas
+            addSectionHeader("Informações do Arquivo");
+            addTableRow("Nome", file.name);
             addTableRow("Tamanho", (file.size / (1024 * 1024)).toFixed(2) + " MB");
 
-            // Usa a biblioteca EXIFR para ler os dados de forma fácil
             const tags = await exifr.parse(file);
             
             if (tags) {
-                // GPS Direto
+                // Seção: GPS e Localização
+                addSectionHeader("🌍 Localização (GPS)");
                 if (tags.latitude && tags.longitude) {
                     const lat = tags.latitude;
                     const lon = tags.longitude;
                     const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${lat},${lon}`;
                     
-                    addTableRow("📍 Localização", `<a href="${mapsUrl}" target="_blank" class="gps-link">ABRIR NO GOOGLE MAPS</a>`, true, "gps-row");
+                    addTableRow("Mapa", `<a href="${mapsUrl}" target="_blank" class="gps-link">ABRIR GOOGLE MAPS</a>`, true, "gps-row");
                     addTableRow("Latitude", lat.toFixed(6), false, "gps-row");
                     addTableRow("Longitude", lon.toFixed(6), false, "gps-row");
+                    
+                    // Nova informação: Altitude
+                    if (tags.GPSAltitude) {
+                        const altitude = Math.round(tags.GPSAltitude);
+                        addTableRow("Altitude", altitude + " metros em relação ao nível do mar");
+                    }
                 } else {
-                    addTableRow("📍 Localização", "GPS removido ou inexistente neste arquivo.");
+                    addTableRow("Aviso", "GPS removido ou inexistente neste arquivo.");
                 }
 
-                if (tags.Make) addTableRow("Marca", tags.Make);
+                // Seção: Equipamento
+                addSectionHeader("📱 Aparelho & Captura");
+                if (tags.Make) addTableRow("Fabricante", tags.Make);
                 if (tags.Model) addTableRow("Modelo", tags.Model);
+                if (tags.DateTimeOriginal) addTableRow("Data/Hora", new Date(tags.DateTimeOriginal).toLocaleString());
                 
-                if (tags.DateTimeOriginal) {
-                    addTableRow("Data/Hora", new Date(tags.DateTimeOriginal).toLocaleString());
-                }
-
                 const width = tags.ExifImageWidth || tags.ImageWidth;
                 const height = tags.ExifImageHeight || tags.ImageHeight;
                 if (width && height) addTableRow("Resolução", `${width} x ${height} px`);
+
+                // Seção: Configurações de Câmera (Novos Dados Avançados)
+                let temConfigCamera = tags.FocalLength || tags.FNumber || tags.ISO || tags.ExposureTime;
+                if (temConfigCamera) {
+                    addSectionHeader("⚙️ Configurações da Câmera");
+                    
+                    if (tags.FocalLength) addTableRow("Distância Focal", tags.FocalLength + " mm");
+                    
+                    if (tags.FNumber) addTableRow("Abertura (F-Stop)", "f/" + tags.FNumber);
+                    
+                    if (tags.ISO) addTableRow("ISO", tags.ISO);
+                    
+                    if (tags.ExposureTime) {
+                        // Converte decimais (ex: 0.01) para fração (ex: 1/100) para ficar com cara de fotógrafo
+                        const shutter = tags.ExposureTime >= 1 ? tags.ExposureTime : "1/" + Math.round(1 / tags.ExposureTime);
+                        addTableRow("Tempo de Exposição", shutter + " seg");
+                    }
+                    
+                    if (tags.Flash) {
+                        // O EXIF do flash às vezes vem como texto em inglês, simplificamos aqui
+                        const disparou = String(tags.Flash).toLowerCase().includes("fired");
+                        addTableRow("Flash", disparou ? "Disparou ⚡" : "Não disparou");
+                    }
+                }
+
             } else if (file.type && file.type.startsWith('video/')) {
-                // Leitura básica para vídeos
+                addSectionHeader("▶️ Detalhes do Vídeo");
                 const video = document.createElement('video');
                 video.preload = 'metadata';
                 video.src = URL.createObjectURL(file);
                 video.onloadedmetadata = () => {
                     URL.revokeObjectURL(video.src);
-                    addTableRow("Duração", video.duration.toFixed(2) + " seg");
+                    addTableRow("Duração", video.duration.toFixed(2) + " segundos");
                     addTableRow("Resolução", `${video.videoWidth} x ${video.videoHeight} px`);
                     table.style.display = 'table';
                 };
@@ -106,6 +139,13 @@
         if (className) row.className = className;
         row.innerHTML = `<th>${label}</th><td>${isHTML ? value : value}</td>`;
         if (!isHTML) row.cells[1].textContent = value;
+    }
+
+    // Função para criar os divisores azuis da tabela
+    function addSectionHeader(title) {
+        const row = tbody.insertRow();
+        row.className = "section-header";
+        row.innerHTML = `<th colspan="2">${title}</th>`;
     }
 </script>
 </body>
