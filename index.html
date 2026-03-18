@@ -2,36 +2,31 @@
 <html lang="pt-br">
 <head>
     <meta charset="UTF-8">
-    <title>Analisador de Metadados Pro</title>
+    <title>Analisador de Metadados Pro - v2</title>
     <script src="https://cdn.jsdelivr.net/npm/exifreader@4.12.0/dist/exif-reader.js"></script>
     <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 40px; background: #eceff1; color: #333; }
-        .container { max-width: 900px; margin: auto; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); }
-        h2 { color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 10px; }
-        input[type="file"] { margin: 20px 0; padding: 10px; border: 2px dashed #3498db; width: 100%; box-sizing: border-box; cursor: pointer; }
+        body { font-family: 'Segoe UI', system-ui, sans-serif; padding: 40px; background: #f0f2f5; color: #1c1e21; }
+        .container { max-width: 850px; margin: auto; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.1); }
+        h2 { color: #1877f2; margin-top: 0; border-bottom: 2px solid #e4e6eb; padding-bottom: 15px; }
+        input[type="file"] { margin: 20px 0; padding: 20px; border: 2px dashed #1877f2; width: 100%; border-radius: 8px; cursor: pointer; background: #f7f8fa; }
         table { width: 100%; border-collapse: collapse; margin-top: 20px; display: none; }
-        th, td { text-align: left; padding: 12px; border-bottom: 1px solid #ddd; }
-        th { background-color: #f8f9fa; color: #2c3e50; width: 30%; }
-        tr:hover { background-color: #f1f1f1; }
-        .gps-link { color: #e74c3c; font-weight: bold; text-decoration: none; }
-        .gps-link:hover { text-decoration: underline; }
+        th, td { text-align: left; padding: 14px; border-bottom: 1px solid #e4e6eb; }
+        th { background-color: #f0f2f5; color: #4b4b4b; width: 35%; font-weight: 600; }
+        tr:hover { background-color: #f9fafb; }
+        .gps-link { display: inline-block; background: #42b72a; color: white; padding: 5px 12px; border-radius: 6px; text-decoration: none; font-size: 0.9em; }
+        .gps-link:hover { background: #36a420; }
+        .no-gps { color: #8e8e8e; font-style: italic; }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h2>Analisador de Arquivos</h2>
-    <p>Selecione uma imagem original (não enviada pelo Zap) para ver o GPS e detalhes técnicos.</p>
+    <h2>Explorador de Metadados</h2>
+    <p>Arraste um arquivo ou clique abaixo para analisar.</p>
     
     <input type="file" id="fileInput" accept="image/*,video/*">
     
     <table id="metadataTable">
-        <thead>
-            <tr>
-                <th>Campo</th>
-                <th>Valor</th>
-            </tr>
-        </thead>
         <tbody id="tableBody"></tbody>
     </table>
 </div>
@@ -45,33 +40,40 @@
         const file = e.target.files[0];
         if (!file) return;
 
-        tbody.innerHTML = ''; // Limpa tabela
-        let dataRows = [];
-
-        // Informações Básicas
-        addRow("Nome do Arquivo", file.name);
+        tbody.innerHTML = ''; 
+        
+        // 1. Info Básica
+        addRow("Arquivo", file.name);
         addRow("Tamanho", (file.size / (1024 * 1024)).toFixed(2) + " MB");
-        addRow("Tipo", file.type);
 
         try {
             if (file.type.startsWith('image/')) {
                 const tags = await ExifReader.load(file);
                 
-                // Extração de GPS
+                // 2. Processamento de GPS (Tratando o erro de NaN)
                 if (tags.GPSLatitude && tags.GPSLongitude) {
+                    // O ExifReader pode retornar o valor decimal direto em .description ou .value
                     const lat = tags.GPSLatitude.description;
                     const lon = tags.GPSLongitude.description;
-                    const googleMapsUrl = `https://www.google.com/maps?q=${lat},${lon}`;
-                    addRow("📍 Localização (GPS)", `<a href="${googleMapsUrl}" target="_blank" class="gps-link">Ver no Google Maps (${lat}, ${lon})</a>`, true);
+
+                    // Validar se os valores são números válidos
+                    if (!isNaN(parseFloat(lat)) && !isNaN(parseFloat(lon))) {
+                        const googleMapsUrl = `https://www.google.com/maps?q=${lat},${lon}`;
+                        addRow("📍 Localização", `<a href="${googleMapsUrl}" target="_blank" class="gps-link">Abrir no Google Maps</a>`, true);
+                        addRow("Coordenadas", `${lat}, ${lon}`);
+                    } else {
+                        addRow("📍 Localização", "<span class='no-gps'>Dados de GPS corrompidos ou em formato inválido</span>", true);
+                    }
                 } else {
-                    addRow("📍 Localização", "Não encontrada (Metadados de GPS ausentes)");
+                    addRow("📍 Localização", "<span class='no-gps'>Não disponível neste arquivo</span>", true);
                 }
 
-                // Detalhes da Câmera
-                if (tags.Make) addRow("Fabricante", tags.Make.description);
-                if (tags.Model) addRow("Modelo do Aparelho", tags.Model.description);
-                if (tags.DateTime) addRow("Data da Captura", tags.DateTime.description);
-                if (tags.Software) addRow("Software/Edição", tags.Software.description);
+                // 3. Info da Câmera
+                if (tags.Make) addRow("Marca", tags.Make.description);
+                if (tags.Model) addRow("Câmera/Celular", tags.Model.description);
+                if (tags.DateTime) addRow("Data/Hora Original", tags.DateTime.description);
+                if (tags.Software) addRow("Editado com", tags.Software.description);
+                if (tags.ImageWidth) addRow("Dimensões", `${tags.ImageWidth.value} x ${tags.ImageHeight.value} px`);
 
             } else if (file.type.startsWith('video/')) {
                 const video = await getVideoInfo(file);
@@ -81,17 +83,15 @@
 
             table.style.display = 'table';
         } catch (err) {
-            alert("Erro ao processar: " + err.message);
+            console.error(err);
+            alert("Erro ao ler o arquivo. Certifique-se de que é uma imagem ou vídeo válido.");
         }
     });
 
     function addRow(label, value, isHTML = false) {
         const row = tbody.insertRow();
-        const cell1 = row.insertCell(0);
-        const cell2 = row.insertCell(1);
-        cell1.innerHTML = `<strong>${label}</strong>`;
-        if (isHTML) cell2.innerHTML = value;
-        else cell2.textContent = value;
+        row.innerHTML = `<th>${label}</th><td>${isHTML ? value : value}</td>`;
+        if (!isHTML) row.cells[1].textContent = value; 
     }
 
     function getVideoInfo(file) {
