@@ -2,84 +2,106 @@
 <html lang="pt-br">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Extrator de Metadados</title>
+    <title>Analisador de Metadados Pro</title>
     <script src="https://cdn.jsdelivr.net/npm/exifreader@4.12.0/dist/exif-reader.js"></script>
     <style>
-        body { font-family: sans-serif; padding: 20px; line-height: 1.6; background: #f4f4f9; }
-        .container { max-width: 800px; margin: auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-        #output { background: #272822; color: #f8f8f2; padding: 15px; border-radius: 5px; overflow-x: auto; white-space: pre-wrap; margin-top: 20px; display: none; }
-        .loader { color: #666; font-style: italic; display: none; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 40px; background: #eceff1; color: #333; }
+        .container { max-width: 900px; margin: auto; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); }
+        h2 { color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 10px; }
+        input[type="file"] { margin: 20px 0; padding: 10px; border: 2px dashed #3498db; width: 100%; box-sizing: border-box; cursor: pointer; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; display: none; }
+        th, td { text-align: left; padding: 12px; border-bottom: 1px solid #ddd; }
+        th { background-color: #f8f9fa; color: #2c3e50; width: 30%; }
+        tr:hover { background-color: #f1f1f1; }
+        .gps-link { color: #e74c3c; font-weight: bold; text-decoration: none; }
+        .gps-link:hover { text-decoration: underline; }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h2>Analisador de Metadados (Imagem/Vídeo)</h2>
-    <p>Selecione um arquivo para ver detalhes como GPS, modelo da câmera, resolução e duração.</p>
+    <h2>Analisador de Arquivos</h2>
+    <p>Selecione uma imagem original (não enviada pelo Zap) para ver o GPS e detalhes técnicos.</p>
     
     <input type="file" id="fileInput" accept="image/*,video/*">
-    <div id="loader" class="loader">Processando arquivo...</div>
-    <pre id="output"></pre>
+    
+    <table id="metadataTable">
+        <thead>
+            <tr>
+                <th>Campo</th>
+                <th>Valor</th>
+            </tr>
+        </thead>
+        <tbody id="tableBody"></tbody>
+    </table>
 </div>
 
 <script>
     const fileInput = document.getElementById('fileInput');
-    const output = document.getElementById('output');
-    const loader = document.getElementById('loader');
+    const table = document.getElementById('metadataTable');
+    const tbody = document.getElementById('tableBody');
 
     fileInput.addEventListener('change', async (e) => {
         const file = e.target.files[0];
         if (!file) return;
 
-        output.style.display = 'none';
-        loader.style.display = 'block';
-        
-        let metadata = {
-            "Nome do Arquivo": file.name,
-            "Tamanho": (file.size / 1024).toFixed(2) + " KB",
-            "Tipo MIME": file.type,
-            "Última Modificação": new Date(file.lastModified).toLocaleString()
-        };
+        tbody.innerHTML = ''; // Limpa tabela
+        let dataRows = [];
+
+        // Informações Básicas
+        addRow("Nome do Arquivo", file.name);
+        addRow("Tamanho", (file.size / (1024 * 1024)).toFixed(2) + " MB");
+        addRow("Tipo", file.type);
 
         try {
             if (file.type.startsWith('image/')) {
-                // Processar Imagem
                 const tags = await ExifReader.load(file);
-                // Remove dados binários pesados (thumbnails) para exibição limpa
-                delete tags['MakerNote']; 
                 
-                metadata["Detalhes da Imagem"] = tags;
-            } 
-            else if (file.type.startsWith('video/')) {
-                // Processar Vídeo (Propriedades básicas do DOM)
-                const videoProps = await getVideoMetadata(file);
-                metadata["Detalhes do Vídeo"] = videoProps;
+                // Extração de GPS
+                if (tags.GPSLatitude && tags.GPSLongitude) {
+                    const lat = tags.GPSLatitude.description;
+                    const lon = tags.GPSLongitude.description;
+                    const googleMapsUrl = `https://www.google.com/maps?q=${lat},${lon}`;
+                    addRow("📍 Localização (GPS)", `<a href="${googleMapsUrl}" target="_blank" class="gps-link">Ver no Google Maps (${lat}, ${lon})</a>`, true);
+                } else {
+                    addRow("📍 Localização", "Não encontrada (Metadados de GPS ausentes)");
+                }
+
+                // Detalhes da Câmera
+                if (tags.Make) addRow("Fabricante", tags.Make.description);
+                if (tags.Model) addRow("Modelo do Aparelho", tags.Model.description);
+                if (tags.DateTime) addRow("Data da Captura", tags.DateTime.description);
+                if (tags.Software) addRow("Software/Edição", tags.Software.description);
+
+            } else if (file.type.startsWith('video/')) {
+                const video = await getVideoInfo(file);
+                addRow("Duração", video.duration + " segundos");
+                addRow("Resolução", `${video.w}x${video.h}`);
             }
 
-            output.textContent = JSON.stringify(metadata, null, 2);
-            output.style.display = 'block';
-        } catch (error) {
-            output.textContent = "Erro ao ler metadados: " + error.message;
-            output.style.display = 'block';
-        } finally {
-            loader.style.display = 'none';
+            table.style.display = 'table';
+        } catch (err) {
+            alert("Erro ao processar: " + err.message);
         }
     });
 
-    // Função para extrair dados técnicos de vídeo
-    function getVideoMetadata(file) {
+    function addRow(label, value, isHTML = false) {
+        const row = tbody.insertRow();
+        const cell1 = row.insertCell(0);
+        const cell2 = row.insertCell(1);
+        cell1.innerHTML = `<strong>${label}</strong>`;
+        if (isHTML) cell2.innerHTML = value;
+        else cell2.textContent = value;
+    }
+
+    function getVideoInfo(file) {
         return new Promise((resolve) => {
-            const video = document.createElement('video');
-            video.preload = 'metadata';
-            video.src = URL.createObjectURL(file);
-            video.onloadedmetadata = () => {
-                URL.revokeObjectURL(video.src);
-                resolve({
-                    "Duração": video.duration.toFixed(2) + " segundos",
-                    "Largura Nominal": video.videoWidth + "px",
-                    "Altura Nominal": video.videoHeight + "px"
-                });
+            const v = document.createElement('video');
+            v.preload = 'metadata';
+            v.src = URL.createObjectURL(file);
+            v.onloadedmetadata = () => {
+                URL.revokeObjectURL(v.src);
+                resolve({ duration: v.duration.toFixed(2), w: v.videoWidth, h: v.videoHeight });
             };
         });
     }
