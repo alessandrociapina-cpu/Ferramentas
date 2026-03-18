@@ -2,119 +2,81 @@
 <html lang="pt-br">
 <head>
     <meta charset="UTF-8">
-    <title>Analisador de Metadados (Motor Exifr)</title>
-    <script src="https://cdn.jsdelivr.net/npm/exifr/dist/full.umd.js"></script>
+    <title>Raio-X de Metadados</title>
+    <script src="https://cdn.jsdelivr.net/npm/exifreader@4.12.0/dist/exif-reader.js"></script>
     <style>
-        body { font-family: 'Segoe UI', Tahoma, sans-serif; padding: 20px; background: #f0f2f5; color: #1c1e21; }
-        .container { max-width: 800px; margin: auto; background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); }
-        h2 { color: #1877f2; border-bottom: 2px solid #e4e6eb; padding-bottom: 10px; margin-top: 0; }
-        input[type="file"] { width: 100%; padding: 20px; border: 2px dashed #1877f2; border-radius: 8px; cursor: pointer; background: #f7f8fa; margin-bottom: 20px; box-sizing: border-box; }
-        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-        th { background: #f8f9fa; color: #65676b; text-align: left; padding: 14px; width: 35%; border-bottom: 1px solid #e4e6eb; font-size: 14px; }
-        td { padding: 14px; border-bottom: 1px solid #e4e6eb; font-size: 14px; word-break: break-all; }
-        .gps-row { background-color: #e7f3ff; font-weight: bold; }
-        .gps-link { background: #42b72a; color: white; padding: 8px 16px; border-radius: 6px; text-decoration: none; display: inline-block; }
-        .gps-link:hover { background: #36a420; }
-        .error-msg { color: #d32f2f; background: #fde0dc; padding: 10px; border-radius: 6px; display: none; margin-bottom: 15px; }
+        body { font-family: monospace; background: #0d1117; color: #58a6ff; padding: 30px; line-height: 1.5; }
+        h2 { color: #fff; }
+        p { color: #8b949e; }
+        input { margin-bottom: 20px; color: white; padding: 10px; border: 1px solid #30363d; background: #21262d; cursor: pointer; }
+        table { border-collapse: collapse; width: 100%; max-width: 900px; background: #161b22; }
+        th, td { border: 1px solid #30363d; padding: 10px; text-align: left; }
+        th { background: #21262d; color: #c9d1d9; }
+        td { color: #a5d6ff; word-break: break-all; }
+        .alert { color: #ff7b72; font-weight: bold; background: #490202; text-align: center; padding: 15px; }
+        .success { color: #3fb950; font-weight: bold; }
     </style>
 </head>
 <body>
-
-<div class="container">
-    <h2>Leitor de Metadados (Exifr)</h2>
-    <input type="file" id="fileInput" accept="image/*,video/*">
-    <div id="errorMsg" class="error-msg"></div>
+    <h2>🔍 RAIO-X BRUTO DO ARQUIVO</h2>
+    <p>Este código apenas joga na tela tudo o que está gravado dentro do .jpg. Sem filtros.</p>
     
-    <table id="resultTable" style="display:none;">
-        <tbody id="tableBody"></tbody>
+    <input type="file" id="fileInput">
+    
+    <table>
+        <thead>
+            <tr>
+                <th style="width: 30%;">Nome da Tag Interna</th>
+                <th>Valor Encontrado no Arquivo</th>
+            </tr>
+        </thead>
+        <tbody id="tbody"></tbody>
     </table>
-</div>
 
-<script>
-    const fileInput = document.getElementById('fileInput');
-    const table = document.getElementById('resultTable');
-    const tbody = document.getElementById('tableBody');
-    const errorMsg = document.getElementById('errorMsg');
-
-    fileInput.addEventListener('change', async (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
-
-        // Limpa resultados anteriores
-        tbody.innerHTML = '';
-        table.style.display = 'none';
-        errorMsg.style.display = 'none';
-
-        try {
-            addTableRow("Arquivo", file.name);
-            addTableRow("Tamanho", (file.size / (1024 * 1024)).toFixed(2) + " MB");
-
-            if (file.type.startsWith('image/')) {
-                // O exifr.parse extrai TUDO (EXIF, GPS, etc) de uma vez só
-                const tags = await exifr.parse(file);
+    <script>
+        document.getElementById('fileInput').addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            
+            const tbody = document.getElementById('tbody');
+            tbody.innerHTML = '<tr><td colspan="2" style="color:#8b949e;">Vasculhando os bytes do arquivo...</td></tr>';
+            
+            try {
+                const tags = await ExifReader.load(file);
+                tbody.innerHTML = '';
+                let encontrouGPS = false;
                 
-                if (tags) {
-                    console.log("Dados extraídos:", tags); // Para depuração
-
-                    // O Exifr já entrega latitude e longitude em decimal e com o sinal correto (+/-)
-                    if (tags.latitude && tags.longitude) {
-                        const lat = tags.latitude;
-                        const lon = tags.longitude;
-                        const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${lat},${lon}`;
-                        
-                        addTableRow("📍 Localização", `<a href="${mapsUrl}" target="_blank" class="gps-link">VER NO MAPA</a>`, true, "gps-row");
-                        addTableRow("Latitude", lat.toFixed(6), false, "gps-row");
-                        addTableRow("Longitude", lon.toFixed(6), false, "gps-row");
-                    } else {
-                        addTableRow("📍 Localização", "GPS não encontrado no arquivo.");
-                    }
-
-                    if (tags.Make) addTableRow("Marca", tags.Make);
-                    if (tags.Model) addTableRow("Modelo", tags.Model);
+                // Varre TODAS as tags que existem no arquivo
+                for (const [nomeTag, dados] of Object.entries(tags)) {
+                    if (nomeTag.toLowerCase().includes('gps')) encontrouGPS = true;
                     
-                    // Tratamento de data
-                    if (tags.DateTimeOriginal) {
-                        const dataFormatada = new Date(tags.DateTimeOriginal).toLocaleString();
-                        addTableRow("Data/Hora", dataFormatada);
+                    // Oculta blocos gigantes de dados da Samsung para o navegador não travar
+                    if (nomeTag === 'MakerNote' || nomeTag === 'thumbnail') continue;
+                    
+                    const tr = document.createElement('tr');
+                    const valor = dados.description || dados.value || 'Vazio';
+                    
+                    // Destaca o GPS em verde se achar
+                    if (nomeTag.toLowerCase().includes('gps')) {
+                        tr.innerHTML = `<td class="success">🎯 ${nomeTag}</td><td class="success">${valor}</td>`;
+                    } else {
+                        tr.innerHTML = `<td>${nomeTag}</td><td>${valor}</td>`;
                     }
-
-                    // Resolução
-                    const width = tags.ExifImageWidth || tags.ImageWidth;
-                    const height = tags.ExifImageHeight || tags.ImageHeight;
-                    if (width && height) addTableRow("Resolução", `${width} x ${height} px`);
-                } else {
-                    addTableRow("Aviso", "A imagem não possui metadados EXIF legíveis.");
+                    tbody.appendChild(tr);
                 }
 
-            } else if (file.type.startsWith('video/')) {
-                const video = document.createElement('video');
-                video.preload = 'metadata';
-                video.src = URL.createObjectURL(file);
-                
-                video.onloadedmetadata = () => {
-                    URL.revokeObjectURL(video.src);
-                    addTableRow("Duração", video.duration.toFixed(2) + " seg");
-                    addTableRow("Resolução", `${video.videoWidth} x ${video.videoHeight} px`);
-                    table.style.display = 'table';
-                };
-                return; // Pausa a execução para esperar o vídeo carregar
+                if (!encontrouGPS) {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `<td colspan="2" class="alert">
+                    ❌ LAUDO: Nenhuma tag de GPS existe dentro deste arquivo.<br>
+                    O seu celular ou navegador apagou a localização por segurança ao carregar a foto.
+                    </td>`;
+                    tbody.appendChild(tr);
+                }
+            } catch (err) {
+                tbody.innerHTML = `<tr><td colspan="2" class="alert">Erro ao ler arquivo: ${err.message}</td></tr>`;
             }
-
-            table.style.display = 'table';
-
-        } catch (err) {
-            console.error(err);
-            errorMsg.textContent = "Erro ao processar o arquivo: " + err.message;
-            errorMsg.style.display = 'block';
-        }
-    });
-
-    function addTableRow(label, value, isHTML = false, className = "") {
-        const row = tbody.insertRow();
-        if (className) row.className = className;
-        row.innerHTML = `<th>${label}</th><td>${isHTML ? value : value}</td>`;
-        if (!isHTML) row.cells[1].textContent = value;
-    }
-</script>
+        });
+    </script>
 </body>
 </html>
